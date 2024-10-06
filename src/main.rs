@@ -24,7 +24,8 @@ use ratatui::{
 
 mod app;
 use app::{
-    back_up_files, duration_compare, retrieve_minecraft_path, App, CodeResult, GeneralError,
+    back_up_files, duration_compare, retrieve_minecraft_path, App, CodeResult, CurrentScreen,
+    EditSetting, GeneralError,
 };
 
 mod ui;
@@ -32,18 +33,19 @@ use ui::ui;
 
 // region: Constants
 
-const MIN_DEBOUNCE_MS: i64 = 750;
-
 // endregion Constants
 
 fn is_debounced(
     key: KeyCode,
     timestamp: DateTime<Local>,
     tracker: &HashMap<KeyCode, DateTime<Local>>,
+    duration: Duration,
 ) -> bool {
     match tracker.get(&key) {
-        Some(last) => timestamp.signed_duration_since(last).num_milliseconds() >= MIN_DEBOUNCE_MS,
-        None => false,
+        Some(last) => {
+            timestamp.signed_duration_since(last).num_milliseconds() as u128 >= duration.as_millis()
+        }
+        None => true,
     }
 }
 
@@ -131,10 +133,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app: App) -> 
         // region: Update logic
 
         let retval;
-        let mut debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
-        let start = Local::now();
-        debounce.insert(KeyCode::Char('m'), start.clone());
-        debounce.insert(KeyCode::Char('q'), start.clone());
+        let mut main_debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
+        let mut backups_debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
+        let mut setting = EditSetting::None;
+        let mut selected: u8 = 0;
+
         // Menu
         loop {
             // Draw
@@ -145,8 +148,13 @@ fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app: App) -> 
                     break;
                 }
             }
+            let start = Local::now();
             // Handle
-            if match event::poll(std::time::Duration::from_millis(1000 / 60)) {
+            if match event::poll(std::time::Duration::from_millis(
+                (&safe_app.lock().unwrap().next_backup.timestamp_millis()
+                    - start.timestamp_millis()
+                    - 1) as u64,
+            )) {
                 Ok(v) => v,
                 Err(e) => {
                     retval = Err(GeneralError::Error(e.to_string()));
@@ -162,21 +170,116 @@ fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app: App) -> 
                 } {
                     let now = Local::now();
                     if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('q') => {
-                                retval = Ok(());
-                                break;
-                            }
-                            KeyCode::Char('m') => {
-                                let debounced = is_debounced(key.code, now, &debounce);
-                                debounce.insert(key.code, now.clone());
+                        let mut unwrapped_app = safe_app.lock().unwrap();
+                        match &unwrapped_app.current_screen {
+                            CurrentScreen::Main => {
+                                let debounced = is_debounced(
+                                    key.code,
+                                    now,
+                                    &main_debounce,
+                                    Duration::from_secs(2),
+                                );
+                                main_debounce.insert(key.code, now.clone());
                                 if !debounced {
                                     continue;
                                 }
-                                manual_backup.swap(true, Ordering::Relaxed);
-                                worker.thread().unpark();
+                                match key.code {
+                                    KeyCode::Char('q') => {
+                                        retval = Ok(());
+                                        break;
+                                    }
+                                    KeyCode::Char('m') => {
+                                        manual_backup.swap(true, Ordering::Relaxed);
+                                        worker.thread().unpark();
+                                    }
+                                    KeyCode::Char('s') => {
+                                        unwrapped_app.set_view(CurrentScreen::Settings);
+                                    }
+                                    KeyCode::Char('b') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                    }
+                                    _ => {}
+                                }
                             }
-                            _ => {}
+                            CurrentScreen::Settings => match setting {
+                                EditSetting::Path => todo!(),
+                                EditSetting::Targets => todo!(),
+                                EditSetting::Frequency => todo!(),
+                                EditSetting::Max => todo!(),
+                                EditSetting::None => match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Main);
+                                    }
+                                    KeyCode::Char('m') => {
+                                        setting = EditSetting::Max;
+                                    }
+                                    KeyCode::Char('t') => {
+                                        setting = EditSetting::Targets;
+                                    }
+                                    KeyCode::Char('f') => {
+                                        setting = EditSetting::Frequency;
+                                    }
+                                    KeyCode::Char('p') => {
+                                        setting = EditSetting::Path;
+                                    }
+                                    _ => {}
+                                },
+                            },
+                            CurrentScreen::Backups => {
+                                let debounced = is_debounced(
+                                    key.code,
+                                    now,
+                                    &backups_debounce,
+                                    Duration::from_secs(2),
+                                );
+                                backups_debounce.insert(key.code, now.clone());
+                                if !debounced {
+                                    continue;
+                                }
+                                match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Main);
+                                    }
+                                    KeyCode::Char('r') => {
+                                        unwrapped_app.set_view(CurrentScreen::ConfirmRestore);
+                                    }
+                                    KeyCode::Char('d') => {
+                                        unwrapped_app.set_view(CurrentScreen::ConfirmRemove);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            CurrentScreen::Targets => {}
+                            CurrentScreen::ConfirmRemove => {
+                                match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                    }
+                                    KeyCode::Char('y') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                        // TODO: Execute removal
+                                    }
+                                    KeyCode::Char('n') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            CurrentScreen::ConfirmRestore => {
+                                match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                    }
+                                    KeyCode::Char('y') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                        // TODO: Execute restore
+                                    }
+                                    KeyCode::Char('n') => {
+                                        unwrapped_app.set_view(CurrentScreen::Backups);
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                     }
                 }
@@ -207,8 +310,8 @@ fn main() -> CodeResult<()> {
     let mut app = App::new();
     app.load_config()?;
 
-    stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;

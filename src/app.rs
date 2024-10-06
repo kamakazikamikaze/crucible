@@ -39,6 +39,37 @@ const TO_COPY: [(&str, &str); 5] = [
 ];
 
 pub const TITLE: &str = " Crucible ";
+
+pub const TIPS_MAIN: [(&str, &str); 5] = [
+    ("m", "anually back up"),
+    ("s", "ettings"),
+    ("b", "ackups"),
+    ("q", "uit"),
+    ("", ""),
+];
+pub const TIPS_SETTINGS: [(&str, &str); 5] = [
+    ("m", "ax backups"),
+    ("t", "argets"),
+    ("f", "requency"),
+    ("p", "ath"),
+    ("q", "uit"),
+];
+pub const TIPS_BACKUPS: [(&str, &str); 5] = [
+    ("r", "estore"),
+    ("d", "elete"),
+    ("q", "uit"),
+    ("", ""),
+    ("", ""),
+];
+pub const TIPS_TARGETS: [(&str, &str); 5] = [
+    ("a", "dd"),
+    ("r", "emove"),
+    ("e", "dit"),
+    ("q", "uit"),
+    ("", ""),
+];
+pub const TIPS_CONFIRM: [(&str, &str); 3] = [("y", "es"), ("n", "o"), ("q", "uit")];
+
 // endregion: Constants
 
 // region: Core classes
@@ -82,13 +113,23 @@ impl std::fmt::Display for Configuration {
 // endregion: Core classes
 
 // region: Custom enums
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum CurrentScreen {
-    ChangeFrequency,
-    ChangeMaxBackups,
-    DeleteBackup,
-    RestoreBackup,
     Main,
+    Settings,
+    Backups,
+    Targets,
+    ConfirmRestore,
+    ConfirmRemove,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum EditSetting {
+    Path,
+    Targets,
+    Frequency,
+    Max,
+    None,
 }
 
 // endregion: Custom enums
@@ -563,5 +604,9 @@ impl App {
         self.configuration = read_config(file)?;
 
         Ok(())
+    }
+
+    pub fn set_view(&mut self, view: CurrentScreen) {
+        self.current_screen = view;
     }
 }
