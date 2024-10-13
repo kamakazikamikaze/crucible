@@ -29,7 +29,7 @@ use app::{
 };
 
 mod ui;
-use ui::{ui, UIState};
+use ui::{ui, UIState, BACKUPS_FREQ_CHARS, BACKUPS_MAX_CHARS};
 
 // region: Constants
 
@@ -289,14 +289,52 @@ fn run(
                                         KeyCode::Char('q') => {
                                             unwrapped_app.set_view(CurrentScreen::Main);
                                         }
-                                        KeyCode::Char('m') => {
-                                            unwrapped_app.set_view(CurrentScreen::Max);
+                                        KeyCode::Char('m') | KeyCode::Char('f') => {
+                                            state.cursor = 0;
+                                            state.num_buf.clear();
+                                            if key.code == KeyCode::Char('m') {
+                                                unwrapped_app.set_view(CurrentScreen::Max);
+                                                unwrapped_app
+                                                    .configuration
+                                                    .max_backups
+                                                    .to_string()
+                                                    .chars()
+                                                    .for_each(|c| {
+                                                        state.num_buf.push(c.to_string())
+                                                    });
+                                                while state.num_buf.len() < BACKUPS_MAX_CHARS {
+                                                    state.num_buf.insert(0, String::from("0"));
+                                                    state.cursor += 1;
+                                                }
+                                            } else {
+                                                unwrapped_app.set_view(CurrentScreen::Frequency);
+                                                let total =
+                                                    unwrapped_app.configuration.frequency.as_secs();
+                                                let hours = format!("{:0>2}", total / 3600);
+                                                let minutes =
+                                                    format!("{:0>2}", (total % 3600) / 60);
+                                                let seconds =
+                                                    format!("{:0>2}", (total % 3600) % 60);
+                                                hours.chars().for_each(|c| {
+                                                    state.num_buf.push(c.to_string())
+                                                });
+                                                minutes.chars().for_each(|c| {
+                                                    state.num_buf.push(c.to_string())
+                                                });
+                                                seconds.chars().for_each(|c| {
+                                                    state.num_buf.push(c.to_string())
+                                                });
+                                                for i in 0..BACKUPS_FREQ_CHARS {
+                                                    if state.num_buf.get(i).unwrap() == "0" {
+                                                        state.cursor += 1;
+                                                    } else {
+                                                        break;
+                                                    }
+                                                }
+                                            }
                                         }
                                         KeyCode::Char('t') => {
                                             unwrapped_app.set_view(CurrentScreen::Targets);
-                                        }
-                                        KeyCode::Char('f') => {
-                                            unwrapped_app.set_view(CurrentScreen::Frequency);
                                         }
                                         KeyCode::Char('p') => {
                                             unwrapped_app.set_view(CurrentScreen::Path);
@@ -544,15 +582,94 @@ fn run(
                                     }
                                     _ => {}
                                 },
-                                CurrentScreen::Frequency => match key.code {
-                                    _ => {}
-                                },
-                                CurrentScreen::Max => todo!(),
+                                CurrentScreen::Frequency | CurrentScreen::Max => {
+                                    let max: usize = match &unwrapped_app.current_screen {
+                                        CurrentScreen::Frequency => BACKUPS_FREQ_CHARS,
+                                        CurrentScreen::Max => BACKUPS_MAX_CHARS,
+                                        _ => 1,
+                                    };
+                                    match key.code {
+                                        KeyCode::Char('q') => {
+                                            unwrapped_app.set_view(CurrentScreen::Settings);
+                                        }
+                                        KeyCode::Left => {
+                                            if state.cursor > 0 {
+                                                state.cursor -= 1;
+                                            }
+                                        }
+                                        KeyCode::Right => {
+                                            if state.cursor < max - 1 {
+                                                state.cursor += 1;
+                                            }
+                                        }
+                                        KeyCode::Char('0')
+                                        | KeyCode::Char('1')
+                                        | KeyCode::Char('2')
+                                        | KeyCode::Char('3')
+                                        | KeyCode::Char('4')
+                                        | KeyCode::Char('5')
+                                        | KeyCode::Char('6')
+                                        | KeyCode::Char('7')
+                                        | KeyCode::Char('8')
+                                        | KeyCode::Char('9') => {
+                                            let input = key.code.to_string();
+                                            state.num_buf.insert(state.cursor, input);
+                                            state.num_buf.remove(state.cursor + 1);
+                                            if state.cursor < max - 1 {
+                                                state.cursor += 1;
+                                            }
+                                        }
+                                        KeyCode::Backspace => {
+                                            if state.cursor > 0 {
+                                                state
+                                                    .num_buf
+                                                    .insert(state.cursor, String::from("0"));
+                                                state.num_buf.remove(state.cursor + 1);
+                                                state.cursor -= 1;
+                                            }
+                                        }
+                                        KeyCode::Delete => {
+                                            if state.num_buf.len() > state.cursor {
+                                                state
+                                                    .num_buf
+                                                    .insert(state.cursor, String::from("0"));
+                                                state.num_buf.remove(state.cursor + 1);
+                                            }
+                                        }
+                                        KeyCode::Enter => {
+                                            if unwrapped_app.current_screen == CurrentScreen::Max {
+                                                unwrapped_app.configuration.max_backups =
+                                                    state.num_buf.join("").parse::<u8>().unwrap();
+                                            } else {
+                                                let hours = state.num_buf[0..2]
+                                                    .join("")
+                                                    .parse::<u64>()
+                                                    .unwrap()
+                                                    * 3600;
+                                                let minutes = state.num_buf[2..4]
+                                                    .join("")
+                                                    .parse::<u64>()
+                                                    .unwrap()
+                                                    * 60;
+                                                let seconds = state.num_buf[4..6]
+                                                    .join("")
+                                                    .parse::<u64>()
+                                                    .unwrap();
+                                                unwrapped_app.configuration.frequency =
+                                                    Duration::from_secs(hours + minutes + seconds);
+                                            }
+                                            conf_changed = true;
+                                            unwrapped_app.set_view(CurrentScreen::Settings);
+                                        }
+                                        _ => {}
+                                    };
+                                }
                             }
                         }
                         if conf_changed {
                             conf_changed = false;
                             unwrapped_app.save_config()?;
+                            worker.thread().unpark();
                         }
                     }
                 }

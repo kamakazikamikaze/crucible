@@ -34,31 +34,31 @@ const TO_COPY: [&str; 5] = [
 pub const TITLE: &str = " Crucible ";
 
 pub const TIPS_MAIN: [(&str, &str); 5] = [
+    ("q", "uit"),
     ("m", "anually back up"),
     ("s", "ettings"),
     ("b", "ackups"),
-    ("q", "uit"),
     ("", ""),
 ];
 pub const TIPS_SETTINGS: [(&str, &str); 5] = [
+    ("q", "uit"),
     ("m", "ax backups"),
     ("t", "argets"),
     ("f", "requency"),
     ("p", "ath"),
-    ("q", "uit"),
 ];
 pub const TIPS_BACKUPS: [(&str, &str); 5] = [
+    ("q", "uit"),
     ("r", "estore"),
     ("d", "elete"),
-    ("q", "uit"),
     ("", ""),
     ("", ""),
 ];
 pub const TIPS_TARGETS: [(&str, &str); 5] = [
+    ("q", "uit"),
     ("a", "dd"),
     ("d", "elete"),
     ("e", "dit"),
-    ("q", "uit"),
     ("", ""),
 ];
 pub const TIPS_CONFIRM: [(&str, &str); 3] = [("y", "es"), ("n", "o"), ("q", "uit")];
@@ -79,7 +79,7 @@ pub const TIPS_PATH: [(&str, &str); 5] = [
 pub const TIPS_NUM: [(&str, &str); 5] = [
     ("q", "uit"),
     ("ENTER", " Confirm"),
-    ("← or →", " Move cursor"),
+    ("← or →", " Move"),
     ("0123456789", ""),
     ("", ""),
 ];

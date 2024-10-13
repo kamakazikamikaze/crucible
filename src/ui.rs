@@ -1,21 +1,21 @@
 use std::path::PathBuf;
 
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Position, Rect},
     style::{Color, Modifier, Style, Stylize},
     symbols::{border, line},
     text::{Line, Span},
-    widgets::{
-        block::{Position, Title},
-        Block, Borders, List, ListState, Paragraph,
-    },
+    widgets::{block, Block, Borders, List, ListState, Paragraph},
     Frame,
 };
 
 use crate::app::{
     get_backups_sorted, Action, App, CurrentScreen, TIPS_BACKUPS, TIPS_CONFIRM, TIPS_MAIN,
-    TIPS_PATH, TIPS_SETTINGS, TIPS_TARGETS, TITLE,
+    TIPS_NUM, TIPS_PATH, TIPS_SETTINGS, TIPS_TARGETS, TITLE,
 };
+
+pub const BACKUPS_MAX_CHARS: usize = 3;
+pub const BACKUPS_FREQ_CHARS: usize = 6;
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -40,28 +40,6 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1] // Return the middle chunk
 }
 
-/*
-pub fn ui(frame: &mut Frame, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(frame.area());
-
-    // Top block
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default());
-    let title = Paragraph::new(Text::styled(APP_NAME, Style::default().fg(Color::Green)))
-        .block(title_block);
-
-    frame.render_widget(title, chunks[0]);
-}
-*/
-
 pub fn ui(
     frame: &mut Frame,
     ui_state: &mut UIState,
@@ -77,7 +55,7 @@ pub fn ui(
         .split(frame.area());
     let term_body = Block::bordered()
         .title(
-            Title::from((TITLE).bold().style(Style::default().fg(Color::White)))
+            block::Title::from((TITLE).bold().style(Style::default().fg(Color::White)))
                 .alignment(Alignment::Center),
         )
         .border_set(border::THICK)
@@ -92,7 +70,7 @@ pub fn ui(
     let tooltips = Block::default()
         .borders(Borders::ALL)
         .title(
-            Title::from(
+            block::Title::from(
                 " Keys "
                     .not_bold()
                     .style(Style::default().fg(Color::Rgb(225, 225, 225))),
@@ -109,8 +87,8 @@ pub fn ui(
             CurrentScreen::Targets => TIPS_TARGETS,
             CurrentScreen::Path => TIPS_PATH,
             CurrentScreen::Target => TIPS_PATH,
-            CurrentScreen::Frequency => todo!(),
-            CurrentScreen::Max => todo!(),
+            CurrentScreen::Frequency => TIPS_NUM,
+            CurrentScreen::Max => TIPS_NUM,
         }
         .map(|(key, rest)| {
             if key.len() > 0 {
@@ -142,16 +120,16 @@ pub fn ui(
     let mainblock = match app.current_screen {
         CurrentScreen::Backups => Block::default()
             .borders(Borders::ALL)
-            .title(Title::from(" Backups ".not_bold()).alignment(Alignment::Left)),
-        CurrentScreen::Targets => Block::default()
+            .title(block::Title::from(" Backups ".not_bold()).alignment(Alignment::Left)),
+        CurrentScreen::Targets => Block::default().borders(Borders::ALL).title(
+            block::Title::from(" Target Files and Folders ".not_bold()).alignment(Alignment::Left),
+        ),
+        CurrentScreen::Settings | CurrentScreen::Frequency | CurrentScreen::Max => Block::default()
             .borders(Borders::ALL)
-            .title(Title::from(" Target Files and Folders ".not_bold()).alignment(Alignment::Left)),
-        CurrentScreen::Settings => Block::default()
-            .borders(Borders::ALL)
-            .title(Title::from(" Settings ".not_bold()).alignment(Alignment::Left)),
+            .title(block::Title::from(" Settings ".not_bold()).alignment(Alignment::Left)),
         CurrentScreen::Target => Block::default()
             .borders(Borders::ALL)
-            .title(Title::from(" Choose Path ".not_bold()).alignment(Alignment::Center)),
+            .title(block::Title::from(" Choose Path ".not_bold()).alignment(Alignment::Center)),
         _ => Block::default().borders(Borders::ALL),
     };
 
@@ -184,7 +162,7 @@ pub fn ui(
                 .repeat_highlight_symbol(true);
             frame.render_stateful_widget(contents, horiz_chunks[1], &mut ui_state.targets)
         }
-        CurrentScreen::Settings => {
+        CurrentScreen::Settings | CurrentScreen::Max | CurrentScreen::Frequency => {
             let items: Vec<Span<'_>> = app
                 .configuration
                 .to_ui_list()
@@ -193,6 +171,56 @@ pub fn ui(
                 .collect();
             let contents = List::new(items).block(mainblock);
             frame.render_widget(contents, horiz_chunks[1]);
+            if app.current_screen == CurrentScreen::Max
+                || app.current_screen == CurrentScreen::Frequency
+            {
+                let center = centered_rect(33, 33, frame.area());
+                let numeric = Block::default()
+                    .borders(Borders::ALL)
+                    .title(
+                        block::Title::from(
+                            " Enter Value "
+                                .bold()
+                                .style(Style::default().fg(Color::White)),
+                        )
+                        .alignment(Alignment::Center),
+                    )
+                    .border_set(border::DOUBLE)
+                    .border_style(Style::default().fg(Color::White).bg(Color::Blue))
+                    .style(Style::default().bg(Color::Blue));
+                let label;
+                if app.current_screen == CurrentScreen::Max {
+                    label =
+                        Paragraph::new(format!("\n Max Backups: {}", ui_state.num_buf.join("")))
+                            .alignment(Alignment::Left)
+                            .style(Style::default().fg(Color::White))
+                            .block(numeric);
+                    frame.set_cursor_position(Position::new(
+                        center.x + ui_state.cursor as u16 + 14,
+                        center.y + 2,
+                    ));
+                } else {
+                    let hours = ui_state.num_buf[0..2].join("");
+                    let minutes = ui_state.num_buf[2..4].join("");
+                    let seconds = ui_state.num_buf[4..6].join("");
+                    label = Paragraph::new(format!(
+                        "\n Backup Interval: {} hours, {} minutes, {} seconds",
+                        hours, minutes, seconds
+                    ))
+                    .alignment(Alignment::Left)
+                    .style(Style::default().fg(Color::White))
+                    .block(numeric);
+                    frame.set_cursor_position(Position::new(
+                        match ui_state.cursor {
+                            0..2 => center.x + ui_state.cursor as u16 + 19,
+                            2..4 => center.x + (ui_state.cursor % 2) as u16 + 29,
+                            4.. => center.x + (ui_state.cursor % 2) as u16 + 41,
+                        },
+                        center.y + 2,
+                    ));
+                }
+                frame.render_widget(label, center);
+            }
         }
         CurrentScreen::Target | CurrentScreen::Path => {
             let target_chunks = Layout::default()
@@ -201,7 +229,7 @@ pub fn ui(
                 .split(horiz_chunks[1]);
             let target_path = Block::bordered()
                 .title(
-                    Title::from(
+                    block::Title::from(
                         " Current Directory "
                             .bold()
                             .style(Style::default().fg(Color::White)),
@@ -213,7 +241,7 @@ pub fn ui(
             let target = Paragraph::new(path.to_str().unwrap()).block(target_path);
             let target_nav = Block::bordered()
                 .title(
-                    Title::from(
+                    block::Title::from(
                         " Navigation "
                             .bold()
                             .style(Style::default().fg(Color::White)),
@@ -250,16 +278,16 @@ pub fn ui(
         let warning = Block::default()
             .borders(Borders::ALL)
             .title(
-                Title::from(
+                block::Title::from(
                     " Are you sure? "
                         .bold()
                         .style(Style::default().fg(Color::White)),
                 )
                 .alignment(Alignment::Center)
-                .position(Position::Top),
+                .position(block::Position::Top),
             )
             .title(
-                Title::from(Line::from(
+                block::Title::from(Line::from(
                     TIPS_CONFIRM
                         .map(|(key, rest)| {
                             vec![
@@ -275,15 +303,15 @@ pub fn ui(
                         .collect::<Vec<Span<'_>>>(),
                 ))
                 .alignment(Alignment::Center)
-                .position(Position::Bottom),
+                .position(block::Position::Bottom),
             )
             .border_set(border::DOUBLE)
             .border_style(Style::default().fg(Color::Gray).bg(Color::Red))
             .style(Style::default().bg(Color::Red));
         let warn_text = Paragraph::new(Line::from(
             match action {
-                Action::ConfirmDelete => "Files for this backup will be DELETED!",
-                Action::ConfirmRestore => "Files in game directory will be OVERWRITTEN!",
+                Action::ConfirmDelete => "\nFiles for this backup will be DELETED!",
+                Action::ConfirmRestore => "\nFiles in game directory will be OVERWRITTEN!",
                 _ => "",
             }
             .bold()
@@ -298,16 +326,16 @@ pub fn ui(
         let warning = Block::default()
             .borders(Borders::ALL)
             .title(
-                Title::from(
+                block::Title::from(
                     " !!! ERROR !!! "
                         .bold()
                         .style(Style::default().fg(Color::White)),
                 )
                 .alignment(Alignment::Center)
-                .position(Position::Top),
+                .position(block::Position::Top),
             )
             .title(
-                Title::from(Line::from(
+                block::Title::from(Line::from(
                     TIPS_CONFIRM
                         .map(|(key, rest)| {
                             vec![
@@ -323,7 +351,7 @@ pub fn ui(
                         .collect::<Vec<Span<'_>>>(),
                 ))
                 .alignment(Alignment::Center)
-                .position(Position::Bottom),
+                .position(block::Position::Bottom),
             )
             .border_set(border::DOUBLE)
             .border_style(Style::default().fg(Color::Gray).bg(Color::Red))
@@ -400,6 +428,8 @@ pub struct UIState {
     pub targets: ListState,
     pub target_change: ListState,
     pub path: ListState,
+    pub cursor: usize,
+    pub num_buf: Vec<String>,
 }
 
 impl UIState {
@@ -409,6 +439,8 @@ impl UIState {
             targets: ListState::default(),
             target_change: ListState::default(),
             path: ListState::default(),
+            cursor: 0,
+            num_buf: Vec::with_capacity(7),
         }
     }
 }
