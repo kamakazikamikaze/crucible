@@ -21,6 +21,7 @@ use ratatui::{
     },
     Terminal,
 };
+use sysinfo::Disks;
 
 mod app;
 use app::{
@@ -407,16 +408,27 @@ fn run(
                                         new_target = match state.path.selected().unwrap() {
                                             0 => match new_target.parent() {
                                                 Some(parent) => parent.to_path_buf(),
-                                                None => new_target,
+                                                None => PathBuf::from(""),
                                             },
                                             _ => child_items.remove(state.path.selected().unwrap()),
                                         };
-                                        if new_target.is_file() {
-                                            new_target = new_target.parent().unwrap().to_path_buf();
+                                        if new_target.to_str().unwrap() == "" {
+                                            child_items.clear();
+                                            Disks::new_with_refreshed_list().iter().for_each(
+                                                |disk| {
+                                                    child_items
+                                                        .push(disk.mount_point().to_path_buf())
+                                                },
+                                            );
+                                        } else {
+                                            if new_target.is_file() {
+                                                new_target =
+                                                    new_target.parent().unwrap().to_path_buf();
+                                            }
+                                            child_items = read_dir(new_target.clone())?
+                                                .map(|i| i.unwrap().path())
+                                                .collect();
                                         }
-                                        child_items = read_dir(new_target.clone())?
-                                            .map(|i| i.unwrap().path())
-                                            .collect();
                                         child_items.insert(0, new_target.join(".."));
                                         state.path.select_first();
                                     }

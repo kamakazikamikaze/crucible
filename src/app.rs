@@ -731,3 +731,12 @@ impl App {
         self.current_screen = view;
     }
 }
+
+#[test]
+fn test_disks() {
+    use sysinfo::Disks;
+
+    for disk in Disks::new_with_refreshed_list().iter() {
+        println!("{:?}", disk);
+    }
+}
