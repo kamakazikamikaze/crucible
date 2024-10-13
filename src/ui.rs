@@ -4,10 +4,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
     symbols::{border, line},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{
         block::{Position, Title},
-        Block, Borders, List, ListState, Paragraph, Widget,
+        Block, Borders, List, ListState, Paragraph,
     },
     Frame,
 };

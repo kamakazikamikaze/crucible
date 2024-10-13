@@ -2,7 +2,7 @@ use dirs::{config_local_dir, document_dir};
 
 use std::{
     any::Any,
-    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all},
+    fs::{copy, create_dir_all, read_dir, remove_dir_all},
     io::{Seek, SeekFrom},
     path::{Path, PathBuf},
     time::Duration,
@@ -62,19 +62,26 @@ pub const TIPS_TARGETS: [(&str, &str); 5] = [
     ("", ""),
 ];
 pub const TIPS_CONFIRM: [(&str, &str); 3] = [("y", "es"), ("n", "o"), ("q", "uit")];
-pub const TIPS_EDIT: [(&str, &str); 5] = [
-    ("ESC", ""),
-    ("ENTER", ""),
-    ("←↑↓→", " Move cursor"),
-    ("", ""),
-    ("", ""),
-];
+// pub const TIPS_EDIT: [(&str, &str); 5] = [
+//     ("ESC", ""),
+//     ("ENTER", ""),
+//     ("←↑↓→", " Move cursor"),
+//     ("", ""),
+//     ("", ""),
+// ];
 pub const TIPS_PATH: [(&str, &str); 5] = [
     ("q", "uit"),
     ("ENTER", " Go into"),
     ("↑ or s", " Move up"),
     ("↓ or w", " Move down"),
     ("t", "arget"),
+];
+pub const TIPS_NUM: [(&str, &str); 5] = [
+    ("q", "uit"),
+    ("ENTER", " Confirm"),
+    ("← or →", " Move cursor"),
+    ("0123456789", ""),
+    ("", ""),
 ];
 
 // endregion: Constants
@@ -159,10 +166,10 @@ pub enum Action {
 pub enum BackupError {
     #[error("error opening file '`{0}`'")]
     FileError(#[from] std::io::Error),
-    #[error("unable to create directory '`{0}`'")]
-    TargetFolderError(String),
-    #[error("std::io::error -> '`{0}`'")]
-    CopyFileError(std::io::Error),
+    // #[error("unable to create directory '`{0}`'")]
+    // TargetFolderError(String),
+    // #[error("std::io::error -> '`{0}`'")]
+    // CopyFileError(std::io::Error),
     #[error("unable to remove directory '`{0}`'")]
     RemoveFolderError(std::io::Error),
 }

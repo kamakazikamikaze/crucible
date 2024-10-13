@@ -19,8 +19,6 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
-    style::Stylize,
-    widgets::Paragraph,
     Terminal,
 };
 
@@ -140,7 +138,7 @@ fn run(
 
         let retval;
         let mut main_debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
-        let mut backups_debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
+        //let mut backups_debounce: HashMap<KeyCode, DateTime<Local>> = HashMap::new();
         let mut action: Action = Action::None;
         let mut conf_changed = false;
 
@@ -546,7 +544,9 @@ fn run(
                                     }
                                     _ => {}
                                 },
-                                CurrentScreen::Frequency => todo!(),
+                                CurrentScreen::Frequency => match key.code {
+                                    _ => {}
+                                },
                                 CurrentScreen::Max => todo!(),
                             }
                         }
@@ -571,6 +571,8 @@ fn run(
                         e,
                         retval.unwrap_err().to_string(),
                     ));
+                } else {
+                    return Err(GeneralError::JustBackupWorker(e));
                 }
             }
         }
