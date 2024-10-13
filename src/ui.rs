@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
@@ -12,7 +14,7 @@ use ratatui::{
 
 use crate::app::{
     get_backups_sorted, Action, App, CurrentScreen, TIPS_BACKUPS, TIPS_CONFIRM, TIPS_MAIN,
-    TIPS_SETTINGS, TIPS_TARGETS, TITLE,
+    TIPS_PATH, TIPS_SETTINGS, TIPS_TARGETS, TITLE,
 };
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
@@ -60,7 +62,14 @@ pub fn ui(frame: &mut Frame, app: &App) {
 }
 */
 
-pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) {
+pub fn ui(
+    frame: &mut Frame,
+    ui_state: &mut UIState,
+    app: &App,
+    action: Action,
+    path: &PathBuf,
+    children: &Vec<PathBuf>,
+) {
     // General Layout Management
     let vert_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -98,13 +107,13 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
             CurrentScreen::Settings => TIPS_SETTINGS,
             CurrentScreen::Backups => TIPS_BACKUPS,
             CurrentScreen::Targets => TIPS_TARGETS,
-            CurrentScreen::Path => todo!(),
-            CurrentScreen::Target => todo!(),
+            CurrentScreen::Path => TIPS_PATH,
+            CurrentScreen::Target => TIPS_PATH,
             CurrentScreen::Frequency => todo!(),
             CurrentScreen::Max => todo!(),
         }
         .map(|(key, rest)| {
-            if key.len() == 1 {
+            if key.len() > 0 {
                 Line::from(vec![
                     Span::styled(
                         "[",
@@ -140,6 +149,9 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
         CurrentScreen::Settings => Block::default()
             .borders(Borders::ALL)
             .title(Title::from(" Settings ".not_bold()).alignment(Alignment::Left)),
+        CurrentScreen::Target => Block::default()
+            .borders(Borders::ALL)
+            .title(Title::from(" Choose Path ".not_bold()).alignment(Alignment::Center)),
         _ => Block::default().borders(Borders::ALL),
     };
 
@@ -181,6 +193,54 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
                 .collect();
             let contents = List::new(items).block(mainblock);
             frame.render_widget(contents, horiz_chunks[1]);
+        }
+        CurrentScreen::Target | CurrentScreen::Path => {
+            let target_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Min(3)])
+                .split(horiz_chunks[1]);
+            let target_path = Block::bordered()
+                .title(
+                    Title::from(
+                        " Current Directory "
+                            .bold()
+                            .style(Style::default().fg(Color::White)),
+                    )
+                    .alignment(Alignment::Center),
+                )
+                .border_set(border::THICK)
+                .border_style(Style::default().fg(Color::Blue));
+            let target = Paragraph::new(path.to_str().unwrap()).block(target_path);
+            let target_nav = Block::bordered()
+                .title(
+                    Title::from(
+                        " Navigation "
+                            .bold()
+                            .style(Style::default().fg(Color::White)),
+                    )
+                    .alignment(Alignment::Center),
+                )
+                .border_set(border::PLAIN)
+                .border_style(Style::default().fg(Color::Blue));
+            let items: Vec<Span<'_>> = children
+                .iter()
+                .map(|b| Span::raw(b.to_str().unwrap()))
+                .collect();
+            let contents = List::new(items)
+                .block(target_nav)
+                .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+                .highlight_symbol(" => ")
+                .repeat_highlight_symbol(true);
+            frame.render_widget(target, target_chunks[0]);
+            frame.render_stateful_widget(
+                contents,
+                target_chunks[1],
+                match app.current_screen {
+                    CurrentScreen::Target => &mut ui_state.target_change,
+                    CurrentScreen::Path => &mut ui_state.path,
+                    _ => &mut ui_state.targets,
+                },
+            );
         }
         _ => frame.render_widget(mainblock, horiz_chunks[1]),
     };
@@ -228,6 +288,50 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
             }
             .bold()
             .style(Style::default().fg(Color::White)),
+        ))
+        .centered()
+        .block(warning);
+
+        frame.render_widget(warn_text, center);
+    } else if action == Action::ConfirmNonExistent {
+        let center = centered_rect(33, 33, vert_chunks[0]);
+        let warning = Block::default()
+            .borders(Borders::ALL)
+            .title(
+                Title::from(
+                    " !!! ERROR !!! "
+                        .bold()
+                        .style(Style::default().fg(Color::White)),
+                )
+                .alignment(Alignment::Center)
+                .position(Position::Top),
+            )
+            .title(
+                Title::from(Line::from(
+                    TIPS_CONFIRM
+                        .map(|(key, rest)| {
+                            vec![
+                                " [".fg(Color::Rgb(185, 185, 185)).not_bold(),
+                                key.fg(Color::Rgb(235, 235, 235)).bold(),
+                                "]".fg(Color::Rgb(185, 185, 185)).not_bold(),
+                                rest.fg(Color::Rgb(185, 185, 185)).not_bold(),
+                                " ".fg(Color::Rgb(185, 185, 185)).not_bold(),
+                            ]
+                        })
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<Span<'_>>>(),
+                ))
+                .alignment(Alignment::Center)
+                .position(Position::Bottom),
+            )
+            .border_set(border::DOUBLE)
+            .border_style(Style::default().fg(Color::Gray).bg(Color::Red))
+            .style(Style::default().bg(Color::Red));
+        let warn_text = Paragraph::new(Line::from(
+            "Insufficient permisssions OR path does not exist!"
+                .bold()
+                .style(Style::default().fg(Color::White)),
         ))
         .centered()
         .block(warning);
@@ -294,6 +398,8 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
 pub struct UIState {
     pub backups: ListState,
     pub targets: ListState,
+    pub target_change: ListState,
+    pub path: ListState,
 }
 
 impl UIState {
@@ -301,6 +407,8 @@ impl UIState {
         UIState {
             backups: ListState::default(),
             targets: ListState::default(),
+            target_change: ListState::default(),
+            path: ListState::default(),
         }
     }
 }

@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
-    fs::remove_dir_all,
+    fs::{read_dir, remove_dir_all},
     io::stdout,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -143,10 +144,23 @@ fn run(
         let mut action: Action = Action::None;
         let mut conf_changed = false;
 
+        // Handling new target
+        let mut new_target = install_path.clone();
+        let mut child_items: Vec<PathBuf> = Vec::new();
+
         // Menu
         loop {
             // Draw
-            match terminal.draw(|frame| ui(frame, state, &safe_app.lock().unwrap(), action)) {
+            match terminal.draw(|frame| {
+                ui(
+                    frame,
+                    state,
+                    &safe_app.lock().unwrap(),
+                    action,
+                    &new_target,
+                    &child_items,
+                )
+            }) {
                 Ok(_) => {}
                 Err(e) => {
                     retval = Err(GeneralError::Error(e.to_string()));
@@ -176,7 +190,10 @@ fn run(
                     let now = Local::now();
                     if key.kind == KeyEventKind::Press {
                         let mut unwrapped_app = safe_app.lock().unwrap();
-                        if action == Action::ConfirmDelete || action == Action::ConfirmRestore {
+                        if action == Action::ConfirmDelete
+                            || action == Action::ConfirmRestore
+                            || action == Action::ConfirmNonExistent
+                        {
                             match key.code {
                                 KeyCode::Char('q') | KeyCode::Char('n') => {
                                     action = Action::None;
@@ -231,6 +248,7 @@ fn run(
                                             }
                                             None => Action::None,
                                         },
+                                        Action::ConfirmNonExistent => Action::None,
                                         _ => action,
                                     }
                                 }
@@ -284,54 +302,232 @@ fn run(
                                         }
                                         KeyCode::Char('p') => {
                                             unwrapped_app.set_view(CurrentScreen::Path);
+                                            new_target = unwrapped_app.configuration.path.clone();
+                                            child_items = read_dir(new_target.clone())?
+                                                .map(|i| i.unwrap().path())
+                                                .collect();
+                                            child_items.insert(0, new_target.join(".."));
                                         }
                                         _ => {}
                                     }
                                 }
-                                CurrentScreen::Backups => {
-                                    // let debounced = is_debounced(
-                                    //     key.code,
-                                    //     now,
-                                    //     &backups_debounce,
-                                    //     Duration::from_secs(2),
-                                    // );
-                                    // backups_debounce.insert(key.code, now.clone());
-                                    // if !debounced {
-                                    //     continue;
-                                    // }
-                                    match key.code {
-                                        KeyCode::Char('q') => {
-                                            unwrapped_app.set_view(CurrentScreen::Main);
-                                        }
-                                        KeyCode::Char('r') => {
-                                            action = Action::ConfirmRestore;
-                                        }
-                                        KeyCode::Char('d') => {
-                                            action = Action::ConfirmDelete;
-                                        }
-                                        KeyCode::Down | KeyCode::Char('s') => {
-                                            state.backups.select_next();
-                                        }
-                                        KeyCode::Up | KeyCode::Char('w') => {
-                                            state.backups.select_previous();
-                                        }
-                                        KeyCode::Home => {
-                                            state.backups.select_first();
-                                        }
-                                        KeyCode::End => {
-                                            state.backups.select_last();
-                                        }
-                                        _ => {}
+                                CurrentScreen::Backups => match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Main);
                                     }
-                                }
-                                CurrentScreen::Path => todo!(),
-                                CurrentScreen::Target => todo!(),
-                                CurrentScreen::Targets => match key.code {
+                                    KeyCode::Char('r') => {
+                                        action = Action::ConfirmRestore;
+                                    }
+                                    KeyCode::Char('d') => {
+                                        action = Action::ConfirmDelete;
+                                    }
+                                    KeyCode::Down | KeyCode::Char('s') => {
+                                        state.backups.select_next();
+                                    }
+                                    KeyCode::Up | KeyCode::Char('w') => {
+                                        state.backups.select_previous();
+                                    }
+                                    KeyCode::Home => {
+                                        state.backups.select_first();
+                                    }
+                                    KeyCode::End => {
+                                        state.backups.select_last();
+                                    }
+                                    _ => {}
+                                },
+                                CurrentScreen::Path => match key.code {
                                     KeyCode::Char('q') => {
                                         unwrapped_app.set_view(CurrentScreen::Settings);
+                                        state.path.select_first();
+                                        new_target = install_path.clone();
+                                        child_items = read_dir(new_target.clone())?
+                                            .map(|i| i.unwrap().path())
+                                            .collect();
+                                        child_items.insert(0, new_target.join(".."));
+                                    }
+                                    KeyCode::Down | KeyCode::Char('s') => {
+                                        state.path.select_next();
+                                    }
+                                    KeyCode::Up | KeyCode::Char('w') => {
+                                        state.path.select_previous();
+                                    }
+                                    KeyCode::Char('t') => {
+                                        match state.path.selected().unwrap() {
+                                            0 => {
+                                                unwrapped_app.configuration.path =
+                                                    new_target.clone()
+                                            }
+                                            _ => {
+                                                unwrapped_app.configuration.path = child_items
+                                                    .remove(state.path.selected().unwrap())
+                                            }
+                                        };
+                                        unwrapped_app.set_view(CurrentScreen::Settings);
+                                        state.path.select_first();
+                                        new_target = install_path.clone();
+                                        conf_changed = true;
+                                    }
+                                    KeyCode::Enter => {
+                                        new_target = match state.path.selected().unwrap() {
+                                            0 => match new_target.parent() {
+                                                Some(parent) => parent.to_path_buf(),
+                                                None => new_target,
+                                            },
+                                            _ => child_items.remove(state.path.selected().unwrap()),
+                                        };
+                                        if new_target.is_file() {
+                                            new_target = new_target.parent().unwrap().to_path_buf();
+                                        }
+                                        child_items = read_dir(new_target.clone())?
+                                            .map(|i| i.unwrap().path())
+                                            .collect();
+                                        child_items.insert(0, new_target.join(".."));
+                                        state.path.select_first();
+                                    }
+                                    KeyCode::Home => {
+                                        state.path.select_first();
+                                    }
+                                    KeyCode::End => {
+                                        state.path.select_last();
+                                    }
+                                    _ => {}
+                                },
+                                CurrentScreen::Target => match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Targets);
+                                        state.target_change.select_first();
+                                        new_target = install_path.clone();
+                                    }
+                                    KeyCode::Down | KeyCode::Char('s') => {
+                                        state.target_change.select_next();
+                                    }
+                                    KeyCode::Up | KeyCode::Char('w') => {
+                                        state.target_change.select_previous();
+                                    }
+                                    KeyCode::Char('t') => {
+                                        if action == Action::Add {
+                                            match state.target_change.selected().unwrap() {
+                                                0 => unwrapped_app.configuration.targets.push(
+                                                    String::from(
+                                                        new_target
+                                                            .strip_prefix(&install_path)
+                                                            .unwrap()
+                                                            .to_str()
+                                                            .unwrap(),
+                                                    ),
+                                                ),
+                                                _ => unwrapped_app.configuration.targets.push(
+                                                    String::from(
+                                                        child_items
+                                                            .remove(
+                                                                state
+                                                                    .target_change
+                                                                    .selected()
+                                                                    .unwrap(),
+                                                            )
+                                                            .strip_prefix(&install_path)
+                                                            .unwrap()
+                                                            .to_str()
+                                                            .unwrap(),
+                                                    ),
+                                                ),
+                                            }
+                                        } else if action == Action::Edit {
+                                            unwrapped_app
+                                                .configuration
+                                                .targets
+                                                .remove(state.targets.selected().unwrap());
+                                            unwrapped_app.configuration.targets.insert(
+                                                state.targets.selected().unwrap(),
+                                                match state.target_change.selected().unwrap() {
+                                                    0 => String::from(
+                                                        new_target
+                                                            .strip_prefix(&install_path)
+                                                            .unwrap()
+                                                            .to_str()
+                                                            .unwrap(),
+                                                    ),
+                                                    _ => String::from(
+                                                        child_items
+                                                            .remove(
+                                                                state
+                                                                    .target_change
+                                                                    .selected()
+                                                                    .unwrap(),
+                                                            )
+                                                            .strip_prefix(&install_path)
+                                                            .unwrap()
+                                                            .to_str()
+                                                            .unwrap(),
+                                                    ),
+                                                },
+                                            );
+                                        }
+                                        unwrapped_app.set_view(CurrentScreen::Targets);
+                                        state.target_change.select_first();
+                                        new_target = install_path.clone();
+                                        conf_changed = true;
+                                    }
+                                    KeyCode::Enter => {
+                                        new_target = match state.target_change.selected().unwrap() {
+                                            0 => {
+                                                if new_target == install_path {
+                                                    new_target
+                                                } else {
+                                                    match new_target.parent() {
+                                                        Some(parent) => parent.to_path_buf(),
+                                                        None => new_target,
+                                                    }
+                                                }
+                                            }
+                                            _ => child_items
+                                                .remove(state.target_change.selected().unwrap()),
+                                        };
+                                        if new_target.is_file() {
+                                            new_target = new_target.parent().unwrap().to_path_buf();
+                                        }
+                                        child_items = read_dir(new_target.clone())?
+                                            .map(|i| i.unwrap().path())
+                                            .collect();
+                                        child_items.insert(0, new_target.join(".."));
+                                        state.target_change.select_first();
+                                    }
+                                    KeyCode::Home => {
+                                        state.target_change.select_first();
+                                    }
+                                    KeyCode::End => {
+                                        state.target_change.select_last();
+                                    }
+                                    _ => {}
+                                },
+                                CurrentScreen::Targets => match key.code {
+                                    KeyCode::Char('q') => {
+                                        action = Action::None;
+                                        unwrapped_app.set_view(CurrentScreen::Settings);
+                                    }
+                                    KeyCode::Char('a') => {
+                                        action = Action::Add;
+                                        unwrapped_app.set_view(CurrentScreen::Target);
+                                        child_items = read_dir(new_target.clone())?
+                                            .map(|i| i.unwrap().path())
+                                            .collect();
+                                        child_items.insert(0, new_target.join(".."));
                                     }
                                     KeyCode::Char('e') => {
+                                        action = Action::Edit;
                                         unwrapped_app.set_view(CurrentScreen::Target);
+                                        new_target = install_path.clone().join(
+                                            unwrapped_app.configuration.targets
+                                                [state.targets.selected().unwrap()]
+                                            .clone(),
+                                        );
+                                        if new_target.is_file() {
+                                            new_target = new_target.parent().unwrap().to_path_buf();
+                                        }
+                                        child_items = read_dir(new_target.clone())?
+                                            .map(|i| i.unwrap().path())
+                                            .collect();
+                                        child_items.insert(0, new_target.join(".."));
                                     }
                                     KeyCode::Char('d') => {
                                         action = Action::ConfirmDelete;
@@ -396,13 +592,18 @@ fn main() -> CodeResult<()> {
     let mut state = UIState::new();
     state.backups.select_first();
     state.targets.select_first();
+    state.target_change.select_first();
+    state.path.select_first();
 
     let result = run(&mut terminal, &mut state, app);
 
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
 
-    println!("{:?}", result);
+    match &result {
+        Ok(_) => {}
+        Err(e) => println!("{:?}", e),
+    }
 
     return result;
 }

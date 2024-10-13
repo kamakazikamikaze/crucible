@@ -69,6 +69,13 @@ pub const TIPS_EDIT: [(&str, &str); 5] = [
     ("", ""),
     ("", ""),
 ];
+pub const TIPS_PATH: [(&str, &str); 5] = [
+    ("q", "uit"),
+    ("ENTER", " Go into"),
+    ("↑ or s", " Move up"),
+    ("↓ or w", " Move down"),
+    ("t", "arget"),
+];
 
 // endregion: Constants
 
@@ -140,6 +147,7 @@ pub enum Action {
     ConfirmDelete,
     Edit,
     ConfirmRestore,
+    ConfirmNonExistent,
     None,
 }
 
