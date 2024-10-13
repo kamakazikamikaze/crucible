@@ -196,7 +196,7 @@ pub fn ui(
                             .style(Style::default().fg(Color::White))
                             .block(numeric);
                     frame.set_cursor_position(Position::new(
-                        center.x + ui_state.cursor as u16 + 14,
+                        center.x + ui_state.cursor as u16 + 15,
                         center.y + 2,
                     ));
                 } else {
