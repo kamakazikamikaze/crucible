@@ -200,7 +200,19 @@ fn run(
                                                     }
                                                     Action::None
                                                 }
-                                                CurrentScreen::Targets => Action::None,
+                                                CurrentScreen::Targets => {
+                                                    match state.targets.selected() {
+                                                        Some(index) => {
+                                                            unwrapped_app
+                                                                .configuration
+                                                                .targets
+                                                                .remove(index);
+                                                            conf_changed = true;
+                                                        }
+                                                        None => {}
+                                                    }
+                                                    Action::None
+                                                }
                                                 _ => Action::None,
                                             }
                                         }
@@ -314,10 +326,37 @@ fn run(
                                 }
                                 CurrentScreen::Path => todo!(),
                                 CurrentScreen::Target => todo!(),
-                                CurrentScreen::Targets => todo!(),
+                                CurrentScreen::Targets => match key.code {
+                                    KeyCode::Char('q') => {
+                                        unwrapped_app.set_view(CurrentScreen::Settings);
+                                    }
+                                    KeyCode::Char('e') => {
+                                        unwrapped_app.set_view(CurrentScreen::Target);
+                                    }
+                                    KeyCode::Char('d') => {
+                                        action = Action::ConfirmDelete;
+                                    }
+                                    KeyCode::Down | KeyCode::Char('s') => {
+                                        state.targets.select_next();
+                                    }
+                                    KeyCode::Up | KeyCode::Char('w') => {
+                                        state.targets.select_previous();
+                                    }
+                                    KeyCode::Home => {
+                                        state.targets.select_first();
+                                    }
+                                    KeyCode::End => {
+                                        state.targets.select_last();
+                                    }
+                                    _ => {}
+                                },
                                 CurrentScreen::Frequency => todo!(),
                                 CurrentScreen::Max => todo!(),
                             }
+                        }
+                        if conf_changed {
+                            conf_changed = false;
+                            unwrapped_app.save_config()?;
                         }
                     }
                 }

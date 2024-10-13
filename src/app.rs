@@ -23,21 +23,12 @@ use thiserror::Error;
 
 // region: Constants
 
-const TO_COPY: [(&str, &str); 5] = [
-    (
-        r"Instances\BigChadGuys Plus (w Cobblemon)\options.txt",
-        r"options.txt",
-    ),
-    (r"Instances\BigChadGuys Plus (w Cobblemon)\saves", r"saves"),
-    (r"Instances\BigChadGuys Plus (w Cobblemon)\local", r"local"),
-    (
-        r"Instances\BigChadGuys Plus (w Cobblemon)\journeymap\data",
-        r"journeymap\data",
-    ),
-    (
-        r"Instances\BigChadGuys Plus (w Cobblemon)\journeymap\config",
-        r"journeymap\config",
-    ),
+const TO_COPY: [&str; 5] = [
+    r"Instances\BigChadGuys Plus (w Cobblemon)\options.txt",
+    r"Instances\BigChadGuys Plus (w Cobblemon)\saves",
+    r"Instances\BigChadGuys Plus (w Cobblemon)\local",
+    r"Instances\BigChadGuys Plus (w Cobblemon)\journeymap\data",
+    r"Instances\BigChadGuys Plus (w Cobblemon)\journeymap\config",
 ];
 
 pub const TITLE: &str = " Crucible ";
@@ -65,7 +56,7 @@ pub const TIPS_BACKUPS: [(&str, &str); 5] = [
 ];
 pub const TIPS_TARGETS: [(&str, &str); 5] = [
     ("a", "dd"),
-    ("r", "emove"),
+    ("d", "elete"),
     ("e", "dit"),
     ("q", "uit"),
     ("", ""),
@@ -87,7 +78,7 @@ pub const TIPS_EDIT: [(&str, &str); 5] = [
 pub struct Configuration {
     pub path: PathBuf,
     pub frequency: Duration,
-    pub targets: Vec<(String, String)>,
+    pub targets: Vec<String>,
     pub max_backups: u8,
 }
 
@@ -99,9 +90,7 @@ impl Default for Configuration {
                 None => PathBuf::from("./"),
             },
             frequency: Duration::from_secs(60 * 15),
-            targets: TO_COPY
-                .map(|pair| (pair.0.to_string(), pair.1.to_string()))
-                .to_vec(),
+            targets: TO_COPY.map(|target| target.to_string()).to_vec(),
             max_backups: 10,
         }
     }
@@ -125,7 +114,7 @@ impl Configuration {
             ("Path", String::from(self.path.to_str().unwrap())),
             ("Frequency", duration_to_readable(self.frequency)),
             ("Max backups", self.max_backups.to_string()),
-            ("Target count", self.targets.capacity().to_string()),
+            ("Target count", self.targets.len().to_string()),
         ]
     }
 }
@@ -289,7 +278,7 @@ pub fn read_config(file: std::fs::File) -> CodeResult<Configuration> {
     }
 }
 
-pub fn write_config(mut file: std::fs::File, config: Configuration) -> CodeResult<()> {
+pub fn write_config(mut file: std::fs::File, config: &Configuration) -> CodeResult<()> {
     match file.seek(SeekFrom::Start(0)) {
         Ok(_) => {}
         Err(e) => {
@@ -326,9 +315,7 @@ pub fn test_write_config() {
     let config = Configuration {
         path: PathBuf::from(r"C:\TEMP\BCG"),
         frequency: Duration::from_secs(60 * 15),
-        targets: TO_COPY
-            .map(|pair| (pair.0.to_string(), pair.1.to_string()))
-            .to_vec(),
+        targets: TO_COPY.map(|entry| entry.to_string()).to_vec(),
         max_backups: 10,
     };
 
@@ -355,7 +342,7 @@ pub fn test_write_config() {
         }
     };
 
-    match write_config(file, config) {
+    match write_config(file, &config) {
         Ok(_) => {}
         Err(_) => assert!(false),
     }
@@ -571,11 +558,11 @@ pub fn back_up_files(source: &PathBuf, config: &Configuration) -> BackupResult<P
         .path
         .join(now.format("%Y-%m-%d %H-%M-%S").to_string());
     for i in &config.targets {
-        if source.join(&i.0).is_dir() {
-            copy_dir_all(source.join(&i.0), new_dir.join(&i.1))?;
+        if source.join(&i).is_dir() {
+            copy_dir_all(source.join(&i), new_dir.join(&i))?;
         } else {
-            create_dir_all(new_dir.join(&i.1).parent().unwrap())?;
-            copy(source.join(&i.0), new_dir.join(&i.1))?;
+            create_dir_all(new_dir.join(&i).parent().unwrap())?;
+            copy(source.join(&i), new_dir.join(&i))?;
         }
     }
     remove_old_backups(config)?;
@@ -588,11 +575,11 @@ pub fn restore_backup(
     config: &Configuration,
 ) -> CodeResult<()> {
     for i in &config.targets {
-        if source.join(&i.1).is_dir() {
-            copy_dir_all(source.join(&i.1), minecraft.join(&i.0))?;
+        if source.join(&i).is_dir() {
+            copy_dir_all(source.join(&i), minecraft.join(&i))?;
         } else {
-            create_dir_all(minecraft.join(&i.0).parent().unwrap())?;
-            copy(source.join(&i.1), minecraft.join(&i.0))?;
+            create_dir_all(minecraft.join(&i).parent().unwrap())?;
+            copy(source.join(&i), minecraft.join(&i))?;
         }
     }
     Ok(())
@@ -603,9 +590,7 @@ pub fn test_back_up_files() {
     let config = Configuration {
         frequency: Duration::from_secs(5),
         path: PathBuf::from(r"C:\TEMP\backups"),
-        targets: TO_COPY
-            .map(|pair| (pair.0.to_string(), pair.1.to_string()))
-            .to_vec(),
+        targets: TO_COPY.map(|entry| entry.to_string()).to_vec(),
         max_backups: 5,
     };
     create_dir_all(r"C:\TEMP\target\example\a").unwrap();
@@ -632,17 +617,14 @@ pub fn test_back_up_files() {
 #[test]
 pub fn test_restore_backup() -> std::io::Result<()> {
     use std::fs::File;
-    use std::io::prelude::{Read, Write};
+    use std::io::prelude::Write;
 
     let config = Configuration {
         frequency: Duration::from_secs(5),
         path: PathBuf::from(r"C:\TEMP\backups"),
         targets: vec![
-            (
-                String::from(r"example\a\options.txt"),
-                String::from(r"options.txt"),
-            ),
-            (String::from(r"example\b"), String::from(r"example\b")),
+            String::from(r"example\a\options.txt"),
+            String::from(r"example\b"),
         ],
         max_backups: 5,
     };
@@ -711,6 +693,21 @@ impl App {
             })?;
 
         self.configuration = read_config(file)?;
+
+        Ok(())
+    }
+
+    pub fn save_config(&mut self) -> CodeResult<()> {
+        let file =
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(match get_config_path() {
+                    Ok(p) => p,
+                    Err(val) => return Err(val),
+                })?;
+
+        write_config(file, &self.configuration)?;
 
         Ok(())
     }

@@ -163,7 +163,7 @@ pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) 
                 .configuration
                 .targets
                 .iter()
-                .map(|b| Span::raw(format!("{} | {}", b.0, b.1)))
+                .map(|b| Span::raw(b))
                 .collect();
             let contents = List::new(items)
                 .block(mainblock)
