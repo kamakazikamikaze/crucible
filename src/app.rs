@@ -2,8 +2,7 @@ use dirs::{config_local_dir, document_dir};
 
 use std::{
     any::Any,
-    char::from_digit,
-    fs::{copy, create_dir_all, read_dir, remove_dir_all},
+    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all},
     io::{Seek, SeekFrom},
     path::{Path, PathBuf},
     time::Duration,
@@ -25,7 +24,10 @@ use thiserror::Error;
 // region: Constants
 
 const TO_COPY: [(&str, &str); 5] = [
-    (r"Instances\BigChadGuys Plus (w Cobblemon)\options.txt", r""),
+    (
+        r"Instances\BigChadGuys Plus (w Cobblemon)\options.txt",
+        r"options.txt",
+    ),
     (r"Instances\BigChadGuys Plus (w Cobblemon)\saves", r"saves"),
     (r"Instances\BigChadGuys Plus (w Cobblemon)\local", r"local"),
     (
@@ -69,6 +71,13 @@ pub const TIPS_TARGETS: [(&str, &str); 5] = [
     ("", ""),
 ];
 pub const TIPS_CONFIRM: [(&str, &str); 3] = [("y", "es"), ("n", "o"), ("q", "uit")];
+pub const TIPS_EDIT: [(&str, &str); 5] = [
+    ("ESC", ""),
+    ("ENTER", ""),
+    ("←↑↓→", " Move cursor"),
+    ("", ""),
+    ("", ""),
+];
 
 // endregion: Constants
 
@@ -110,6 +119,17 @@ impl std::fmt::Display for Configuration {
     }
 }
 
+impl Configuration {
+    pub fn to_ui_list(&self) -> Vec<(&str, String)> {
+        vec![
+            ("Path", String::from(self.path.to_str().unwrap())),
+            ("Frequency", duration_to_readable(self.frequency)),
+            ("Max backups", self.max_backups.to_string()),
+            ("Target count", self.targets.capacity().to_string()),
+        ]
+    }
+}
+
 // endregion: Core classes
 
 // region: Custom enums
@@ -118,17 +138,19 @@ pub enum CurrentScreen {
     Main,
     Settings,
     Backups,
-    Targets,
-    ConfirmRestore,
-    ConfirmRemove,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum EditSetting {
     Path,
+    Target,
     Targets,
     Frequency,
     Max,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Action {
+    Add,
+    ConfirmDelete,
+    Edit,
+    ConfirmRestore,
     None,
 }
 
@@ -168,6 +190,25 @@ pub type CodeResult<T> = std::result::Result<T, GeneralError>;
 // endregion Error types
 
 // region: Helper functions
+
+pub fn duration_to_readable(duration: Duration) -> String {
+    let mut segments: Vec<String> = Vec::new();
+    let mut seconds_left = duration.as_secs();
+    if seconds_left >= 3600 {
+        let hours = seconds_left / 3600;
+        seconds_left %= 3600;
+        segments.push(format!("{} hours", hours));
+    }
+    if seconds_left >= 60 {
+        let minutes = seconds_left / 60;
+        seconds_left %= 60;
+        segments.push(format!("{} minutes", minutes));
+    }
+    if seconds_left > 0 {
+        segments.push(format!("{} seconds", seconds_left));
+    }
+    segments.join(", ")
+}
 
 pub fn retrieve_minecraft_path() -> CodeResult<PathBuf> {
     match Hive::CurrentUser.open(r"Software\Overwolf\CurseForge", Security::Read) {
@@ -530,10 +571,31 @@ pub fn back_up_files(source: &PathBuf, config: &Configuration) -> BackupResult<P
         .path
         .join(now.format("%Y-%m-%d %H-%M-%S").to_string());
     for i in &config.targets {
-        copy_dir_all(source.join(&i.0), new_dir.join(&i.1))?;
+        if source.join(&i.0).is_dir() {
+            copy_dir_all(source.join(&i.0), new_dir.join(&i.1))?;
+        } else {
+            create_dir_all(new_dir.join(&i.1).parent().unwrap())?;
+            copy(source.join(&i.0), new_dir.join(&i.1))?;
+        }
     }
     remove_old_backups(config)?;
     Ok(new_dir)
+}
+
+pub fn restore_backup(
+    minecraft: &PathBuf,
+    source: &PathBuf,
+    config: &Configuration,
+) -> CodeResult<()> {
+    for i in &config.targets {
+        if source.join(&i.1).is_dir() {
+            copy_dir_all(source.join(&i.1), minecraft.join(&i.0))?;
+        } else {
+            create_dir_all(minecraft.join(&i.0).parent().unwrap())?;
+            copy(source.join(&i.1), minecraft.join(&i.0))?;
+        }
+    }
+    Ok(())
 }
 
 #[test]
@@ -565,6 +627,53 @@ pub fn test_back_up_files() {
             .count(),
         5,
     );
+}
+
+#[test]
+pub fn test_restore_backup() -> std::io::Result<()> {
+    use std::fs::File;
+    use std::io::prelude::{Read, Write};
+
+    let config = Configuration {
+        frequency: Duration::from_secs(5),
+        path: PathBuf::from(r"C:\TEMP\backups"),
+        targets: vec![
+            (
+                String::from(r"example\a\options.txt"),
+                String::from(r"options.txt"),
+            ),
+            (String::from(r"example\b"), String::from(r"example\b")),
+        ],
+        max_backups: 5,
+    };
+
+    create_dir_all(r"C:\TEMP\target\example\a")?;
+    create_dir_all(r"C:\TEMP\target\example\b")?;
+
+    let mut file_a = File::create(r"C:\Temp\target\example\a\options.txt")?;
+    file_a.write_all(b"Hello, I am Lindsay Lohan!")?;
+
+    let mut file_b = File::create(r"C:\Temp\target\example\b\soup.txt")?;
+    file_b.write_all(b"Beef stew.")?;
+
+    match back_up_files(&PathBuf::from(r"C:\TEMP\target"), &config) {
+        Ok(p) => {
+            remove_dir_all(r"C:\TEMP\target\example")?;
+            match restore_backup(&PathBuf::from(r"C:\TEMP\target"), &p, &config) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("{:?}", e);
+                    assert!(false);
+                }
+            }
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+            assert!(false);
+        }
+    }
+
+    Ok(())
 }
 
 #[test]

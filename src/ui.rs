@@ -1,18 +1,18 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     symbols::{border, line},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{
         block::{Position, Title},
-        Block, Borders, Paragraph,
+        Block, Borders, List, ListState, Paragraph, Widget,
     },
     Frame,
 };
 
 use crate::app::{
-    get_backups_sorted, App, CurrentScreen, TIPS_BACKUPS, TIPS_CONFIRM, TIPS_MAIN, TIPS_SETTINGS,
-    TIPS_TARGETS, TITLE,
+    get_backups_sorted, Action, App, CurrentScreen, TIPS_BACKUPS, TIPS_CONFIRM, TIPS_MAIN,
+    TIPS_SETTINGS, TIPS_TARGETS, TITLE,
 };
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
@@ -60,7 +60,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
 }
 */
 
-pub fn ui(frame: &mut Frame, app: &App) {
+pub fn ui(frame: &mut Frame, ui_state: &mut UIState, app: &App, action: Action) {
     // General Layout Management
     let vert_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -98,8 +98,10 @@ pub fn ui(frame: &mut Frame, app: &App) {
             CurrentScreen::Settings => TIPS_SETTINGS,
             CurrentScreen::Backups => TIPS_BACKUPS,
             CurrentScreen::Targets => TIPS_TARGETS,
-            CurrentScreen::ConfirmRestore => TIPS_BACKUPS,
-            CurrentScreen::ConfirmRemove => TIPS_BACKUPS,
+            CurrentScreen::Path => todo!(),
+            CurrentScreen::Target => todo!(),
+            CurrentScreen::Frequency => todo!(),
+            CurrentScreen::Max => todo!(),
         }
         .map(|(key, rest)| {
             if key.len() == 1 {
@@ -128,14 +130,62 @@ pub fn ui(frame: &mut Frame, app: &App) {
     )
     .alignment(Alignment::Left)
     .block(tooltips);
-    let content = Block::default().borders(Borders::NONE);
+    let mainblock = match app.current_screen {
+        CurrentScreen::Backups => Block::default()
+            .borders(Borders::ALL)
+            .title(Title::from(" Backups ".not_bold()).alignment(Alignment::Left)),
+        CurrentScreen::Targets => Block::default()
+            .borders(Borders::ALL)
+            .title(Title::from(" Target Files and Folders ".not_bold()).alignment(Alignment::Left)),
+        CurrentScreen::Settings => Block::default()
+            .borders(Borders::ALL)
+            .title(Title::from(" Settings ".not_bold()).alignment(Alignment::Left)),
+        _ => Block::default().borders(Borders::ALL),
+    };
 
     frame.render_widget(tiptext, horiz_chunks[0]);
-    frame.render_widget(content, horiz_chunks[1]);
 
-    if app.current_screen == CurrentScreen::ConfirmRemove
-        || app.current_screen == CurrentScreen::ConfirmRestore
-    {
+    match app.current_screen {
+        CurrentScreen::Backups => {
+            let backups = get_backups_sorted(&app.configuration).unwrap();
+            let items = backups
+                .iter()
+                .map(|b| b.1.file_name().unwrap().to_str().unwrap());
+            let contents = List::new(items)
+                .block(mainblock)
+                .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+                .highlight_symbol(" => ")
+                .repeat_highlight_symbol(true);
+            frame.render_stateful_widget(contents, horiz_chunks[1], &mut ui_state.backups);
+        }
+        CurrentScreen::Targets => {
+            let items: Vec<Span<'_>> = app
+                .configuration
+                .targets
+                .iter()
+                .map(|b| Span::raw(format!("{} | {}", b.0, b.1)))
+                .collect();
+            let contents = List::new(items)
+                .block(mainblock)
+                .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+                .highlight_symbol(" => ")
+                .repeat_highlight_symbol(true);
+            frame.render_stateful_widget(contents, horiz_chunks[1], &mut ui_state.targets)
+        }
+        CurrentScreen::Settings => {
+            let items: Vec<Span<'_>> = app
+                .configuration
+                .to_ui_list()
+                .iter()
+                .map(|b| Span::raw(format!(" {:>12} | {}", b.0, b.1)))
+                .collect();
+            let contents = List::new(items).block(mainblock);
+            frame.render_widget(contents, horiz_chunks[1]);
+        }
+        _ => frame.render_widget(mainblock, horiz_chunks[1]),
+    };
+
+    if action == Action::ConfirmDelete || action == Action::ConfirmRestore {
         let center = centered_rect(33, 33, vert_chunks[0]);
         let warning = Block::default()
             .borders(Borders::ALL)
@@ -171,9 +221,9 @@ pub fn ui(frame: &mut Frame, app: &App) {
             .border_style(Style::default().fg(Color::Gray).bg(Color::Red))
             .style(Style::default().bg(Color::Red));
         let warn_text = Paragraph::new(Line::from(
-            match app.current_screen {
-                CurrentScreen::ConfirmRemove => "Files for this backup will be DELETED!",
-                CurrentScreen::ConfirmRestore => "Files in game directory will be OVERWRITTEN!",
+            match action {
+                Action::ConfirmDelete => "Files for this backup will be DELETED!",
+                Action::ConfirmRestore => "Files in game directory will be OVERWRITTEN!",
                 _ => "",
             }
             .bold()
@@ -239,4 +289,18 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     frame.render_widget(last_backup_footer, footer_chunks[0]);
     frame.render_widget(next_backup_footer, footer_chunks[1]);
+}
+
+pub struct UIState {
+    pub backups: ListState,
+    pub targets: ListState,
+}
+
+impl UIState {
+    pub fn new() -> UIState {
+        UIState {
+            backups: ListState::default(),
+            targets: ListState::default(),
+        }
+    }
 }
